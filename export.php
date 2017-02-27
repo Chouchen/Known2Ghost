@@ -1,19 +1,21 @@
 <?php
 
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 require_once(dirname(__FILE__) . '/Idno/start.php');
 
 include 'HTML-To-Markdown.php';
+$garray = [];
+$garray['data'] = array();
+$garray['data']['posts'] = array();
+$garray['data']['tags'] = array();
+$garray['data']['posts_tags'] = array();
+$garray['data']['users'] = array();
 
-function init() {
-	$this->garray['data'] = array();
-	$this->garray['data']['posts'] = array();
-	$this->garray['data']['tags'] = array();
-	$this->garray['data']['posts_tags'] = array();
-	$this->garray['data']['users'] = array();
-}
-
-function populate_meta() {
-	$this->garray['meta'] = array(
+function metas($garray) {
+	$garray['meta'] = array(
 		'exported_on' 	=> date( 'r' ),
 		'version'		=> '000',
 	);
@@ -24,7 +26,7 @@ function tags() {
 
 	if ( ! empty( $all_tags ) ) {
 		foreach ( $all_tags as $tag ) {
-			$this->garray['data']['tags'][] = array(
+			$garray['data']['tags'][] = array(
 				'id' => intval( $tag->term_id ),
 				'name' => $tag->name,
 				'slug' => $tag->slug,
@@ -40,61 +42,46 @@ function tags() {
 
 // TODO modifier ça pour Known !
 // https://github.com/idno/Known/blob/master/Idno/Common/Entity.php
-function posts() {
+function posts($garray) {
 	
 	$posts = Idno\Common\Entity::getFromAll([], [], 99999);
 	$slug_number = 0;
 	$_post_tags = [];
 
-	foreach(posts as $post) {
-		global $post;
-		$posts->the_post();
+	foreach($posts as $post) {
+	    if ($post instanceof Idno\Entities\Notification) {
+	        continue;
+        }
 
-		$post->post_markdown = new HTML_To_Markdown( apply_filters( 'the_content', $post->post_content ) );
+        $post_markdown = new HTML_To_Markdown( $post->attributes['body'] );
 
-		$tags = get_the_tags();
-		if ( ! empty( $tags ) ) {
-			foreach ( $tags as $tag ) {
-				$_post_tags[] = array(
-					'tag_id' => intval( $tag->term_id ),
-					'post_id' => intval( $post->ID )
-				);
-			}
-		}
-
-		$s = $this->map_status( $post->post_status );
-
-		$image_id = get_post_thumbnail_id( $post->ID );
-		if ( $image_id !== '' ) {
-			$image = wp_get_attachment_image_src( $image_id, 'full' );
-		}
-
-		$this->garray['data']['posts'][] = array(
+		$_post_tags[] = [];
+		$garray['data']['posts'][] = array(
 			//'id'			=> intval( $post->ID ),
-			'title'			=> substr( ( empty( $post->title ) ) ? '(no title)' : $post->post_title, 0, 150 ),
-			'slug'			=> substr( ( empty( $post->post_name ) ) ? 'temp-slug-' . $slug_number : $post->post_name, 0, 150 ),
-			'markdown'		=> $post->post_markdown->output(),
-			'html'			=> apply_filters( 'the_content', $post->post_content ),
-			'image'			=> ( $image_id ) ? $image[0] : null,
+			'title'			=> substr( ( empty( $post->attributes['title'] ) ) ? $post->attributes['body'] : $post->attributes['title'], 0, 150 ),
+			'slug'			=> $post->attributes['slug'],
+			'markdown'		=> $post_markdown->output(),
+			'html'			=> $post->attributes['body'],
+			'image'			=> null,
 			'featured'		=> 0,
-			'page'			=> ( $post->post_type === 'page' ) ? 1 : 0,
-			'status'		=> substr( $s, 0, 150 ),
-			'language'		=> substr( 'en_US', 0, 6 ),
+			'page'			=> 1,
+			'status'		=> substr( $post->attributes['publish_status'], 0, 150 ),
+			'language'		=> 'fr_FR',
 			'meta_title'	=> null,
 			'meta_description'	=> null,
-			'author_id'		=> $this->_safe_author_id( $post->post_author ),
-			'created_at'	=> $this->_get_json_date( $post->post_date ),
+			'author_id'		=> 1,
+			'created_at'	=> _get_json_date( $post->post_date ),
 			'created_by'	=> 1,
-			'updated_at'	=> $this->_get_json_date( $post->post_modified ),
+			'updated_at'	=> _get_json_date( $post->post_modified ),
 			'updated_by'	=> 1,
-			'published_at'	=> ($s !== 'draft') ? $this->_get_json_date( $post->post_date ) : '',
+			'published_at'	=> _get_json_date( $post->post_date ),
 			'published_by'	=> 1,
 		);
 
 		$slug_number += 1;
 	}
 
-	$this->garray['data']['posts_tags'] = $_post_tags;
+	$garray['data']['posts_tags'] = $_post_tags;
 
 	// cleanup
 	unset( $posts_args );
@@ -104,40 +91,41 @@ function posts() {
 	unset( $tags );
 	unset( $tag );
 	unset( $s );
+
+	var_dump($garray);
+	exit;
+
 }
 
-function populate_data() {
-	if ( $this->garray !== null ) {
-		return;
-	}
+function _get_json_date( $date ) {
+    return date( 'r', strtotime( $date ) );
+}
 
-	$this->garray = array();
-
-	// preps the structure
-	init();
-
+function populate_data($garray) {
+//	if ( $garray !== null ) {
+//		return;
+//	}
 	// attaches metadata
-	meta();
+	metas($garray);
 
 	// attaches tags
-	tags();
-
+//	tags();
 	// populates posts
-	posts();
+	posts($garray);
 }
 
 /**
  * Sends necessary headers and whatnot to allow to download file
  * @return bin file
  */
-public function download_file() {
+function download_file($garray) {
 
 	// Ensure the user accessing the function actually has permission to do this
 	if ( ! current_user_can('export') ) {
 		wp_die( "<p>You are not allowed to do that.</p>", 'Permission error' );
 	}
 
-	$this->populate_data();
+	populate_data($garray);
 
 	$upload_dir = wp_upload_dir();
 	$filedir = $upload_dir['path'];
@@ -148,7 +136,7 @@ public function download_file() {
 	}
 
 	$handle = fopen( $filedir . '/' . $filename, 'w' );
-	$content = $this->get_json( $this->garray );
+	$content = $this->get_json( $garray );
 	fwrite( $handle, $content );
 	fclose( $handle );
 
@@ -165,3 +153,7 @@ public function download_file() {
 	readfile( $filedir . '/' . $filename );
 	exit;
 }
+
+populate_data($garray);
+/*
+//highlight_string("<?php\n\$data =\n" . var_export(Idno\Common\Entity::getFromAll([], [], 99999), true) . ";\n?>");
