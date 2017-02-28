@@ -7,153 +7,115 @@ error_reporting(E_ALL);
 require_once(dirname(__FILE__) . '/Idno/start.php');
 
 include 'HTML-To-Markdown.php';
-$garray = [];
-$garray['data'] = array();
-$garray['data']['posts'] = array();
-$garray['data']['tags'] = array();
-$garray['data']['posts_tags'] = array();
-$garray['data']['users'] = array();
 
-function metas($garray) {
-	$garray['meta'] = array(
-		'exported_on' 	=> date( 'r' ),
-		'version'		=> '000',
-	);
+$garray                         = [];
+$garray['data']                 = [];
+$garray['data']['posts']        = [];
+$garray['data']['tags']         = [];
+$garray['data']['posts_tags']   = [];
+$garray['data']['users']        = [];
+
+function metas(&$garray) {
+    $garray['meta'] = [
+        'exported_on'   => date( 'r' ),
+        'version'       => '000',
+    ];
 }
 
-function tags() {
-	$all_tags = get_tags();
+function posts(&$garray) {
 
-	if ( ! empty( $all_tags ) ) {
-		foreach ( $all_tags as $tag ) {
-			$garray['data']['tags'][] = array(
-				'id' => intval( $tag->term_id ),
-				'name' => $tag->name,
-				'slug' => $tag->slug,
-				'description' => $tag->description,
-			);
-		}
-	}
+    $posts = Idno\Common\Entity::getFromAll([], [], 99999);
+    $slug_number = 0;
+    $_post_tags = [];
+    $i = 1;
 
-	// cleanup
-	unset( $all_tags );
-	unset( $tag );
-}
-
-// TODO modifier ça pour Known !
-// https://github.com/idno/Known/blob/master/Idno/Common/Entity.php
-function posts($garray) {
-	
-	$posts = Idno\Common\Entity::getFromAll([], [], 99999);
-	$slug_number = 0;
-	$_post_tags = [];
-
-	foreach($posts as $post) {
-	    if ($post instanceof Idno\Entities\Notification) {
-	        continue;
+    foreach($posts as $post) {
+        if ($post instanceof Idno\Entities\Notification) {
+            continue;
         }
 
         $post_markdown = new HTML_To_Markdown( $post->attributes['body'] );
 
-		$_post_tags[] = [];
-		$garray['data']['posts'][] = array(
-			//'id'			=> intval( $post->ID ),
-			'title'			=> substr( ( empty( $post->attributes['title'] ) ) ? $post->attributes['body'] : $post->attributes['title'], 0, 150 ),
-			'slug'			=> $post->attributes['slug'],
-			'markdown'		=> $post_markdown->output(),
-			'html'			=> $post->attributes['body'],
-			'image'			=> null,
-			'featured'		=> 0,
-			'page'			=> 1,
-			'status'		=> substr( $post->attributes['publish_status'], 0, 150 ),
-			'language'		=> 'fr_FR',
-			'meta_title'	=> null,
-			'meta_description'	=> null,
-			'author_id'		=> 1,
-			'created_at'	=> _get_json_date( $post->post_date ),
-			'created_by'	=> 1,
-			'updated_at'	=> _get_json_date( $post->post_modified ),
-			'updated_by'	=> 1,
-			'published_at'	=> _get_json_date( $post->post_date ),
-			'published_by'	=> 1,
-		);
+        $_post_tags[] = [];
+        $garray['data']['posts'][] = array(
+            'id'      =>  $i,
+            'title'     => substr( ( empty( $post->attributes['title'] ) ) ? $post->attributes['body'] : $post->attributes['title'], 0, 150 ),
+            'slug'      => $post->attributes['slug'],
+            'markdown'    => $post_markdown->output(),
+            'html'      => $post->attributes['body'],
+            'image'     => null,
+            'featured'    => 0,
+            'page'      => 1,
+            'status'    => isset($post->attributes['publish_status']) ? substr( $post->attributes['publish_status'], 0, 150 ) : 'published',
+            'language'    => 'fr_FR',
+            'meta_title'  => null,
+            'meta_description'  => null,
+            'author_id'   => 1,
+            'created_at'  => _get_json_date( $post->created ),
+            'created_by'  => 1,
+            'updated_at'  => _get_json_date( $post->updated ),
+            'updated_by'  => 1,
+            'published_at'  => _get_json_date( $post->created ),
+            'published_by'  => 1,
+        );
 
-		$slug_number += 1;
-	}
+        $slug_number += 1;
+        $i++;
+    }
 
-	$garray['data']['posts_tags'] = $_post_tags;
+    $garray['data']['posts_tags'] = $_post_tags;
 
-	// cleanup
-	unset( $posts_args );
-	unset( $posts );
-	unset( $slug_number );
-	unset( $_post_tags );
-	unset( $tags );
-	unset( $tag );
-	unset( $s );
-
-	var_dump($garray);
-	exit;
-
+    // cleanup
+    unset( $posts_args );
+    unset( $posts );
+    unset( $slug_number );
+    unset( $_post_tags );
+    unset( $tags );
+    unset( $tag );
+    unset( $s );
 }
 
 function _get_json_date( $date ) {
-    return date( 'r', strtotime( $date ) );
+    return date( 'r', $date );
 }
 
-function populate_data($garray) {
-//	if ( $garray !== null ) {
-//		return;
-//	}
-	// attaches metadata
-	metas($garray);
+function populate_data(&$garray) {
+    // attaches metadata
+    metas($garray);
 
-	// attaches tags
-//	tags();
-	// populates posts
-	posts($garray);
+    // populates posts
+    posts($garray);
 }
 
 /**
  * Sends necessary headers and whatnot to allow to download file
- * @return bin file
  */
 function download_file($garray) {
 
-	// Ensure the user accessing the function actually has permission to do this
-	if ( ! current_user_can('export') ) {
-		wp_die( "<p>You are not allowed to do that.</p>", 'Permission error' );
-	}
+    populate_data($garray);
+    $filedir = dirname(__FILE__).'/Uploads';
+    $filename = 'known2ghost_export_' . time() . '.json';
 
-	populate_data($garray);
+    if ( ! is_writable( $filedir ) ) {
+        echo ( "<p>Uploads directory is not writable, can't save the Ghost json file :/</p><p>Generated by the Ghost plugin version {$this->version}.</p>");
+    }
 
-	$upload_dir = wp_upload_dir();
-	$filedir = $upload_dir['path'];
-	$filename = 'wp2ghost_export_' . time() . '.json';
+    $handle = fopen( $filedir . '/' . $filename, 'w' );
+    $content = json_encode( $garray );
+    fwrite( $handle, $content );
+    fclose( $handle );
+    header( 'Content-Description: File Transfer' );
+    header( 'Content-Type: application/octet-stream' );
+    header( 'Content-Disposition: attachment; filename='.$filename );
+    header( 'Content-Transfer-Encoding: binary' );
+    header( 'Expires: 0' );
+    header( 'Cache-Control: must-revalidate' );
+    header( 'Pragma: public' );
+    header( 'Content-Length: ' . filesize( $filedir . '/' . $filename ) );
 
-	if ( ! is_writable( $filedir ) ) {
-		wp_die( "<p>Uploads directory is not writable, can't save the Ghost json file :/</p><p>Generated by the Ghost plugin version {$this->version}.</p>", 'Directory not writable' );
-	}
-
-	$handle = fopen( $filedir . '/' . $filename, 'w' );
-	$content = $this->get_json( $garray );
-	fwrite( $handle, $content );
-	fclose( $handle );
-
-	header( 'Content-Description: File Transfer' );
-	header( 'Content-Type: application/octet-stream' );
-	header( 'Content-Disposition: attachment; filename='.$filename );
-	header( 'Content-Transfer-Encoding: binary' );
-	header( 'Expires: 0' );
-	header( 'Cache-Control: must-revalidate' );
-	header( 'Pragma: public' );
-	header( 'Content-Length: ' . filesize( $filedir . '/' . $filename ) );
-
-	flush();
-	readfile( $filedir . '/' . $filename );
-	exit;
+    flush();
+    readfile( $filedir . '/' . $filename );
+    exit;
 }
 
-populate_data($garray);
-/*
-//highlight_string("<?php\n\$data =\n" . var_export(Idno\Common\Entity::getFromAll([], [], 99999), true) . ";\n?>");
+download_file($garray);
