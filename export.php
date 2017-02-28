@@ -45,7 +45,7 @@ function posts(&$garray) {
             'html'      => $post->attributes['body'],
             'image'     => null,
             'featured'    => 0,
-            'page'      => 1,
+            'page'      => 0,
             'status'    => isset($post->attributes['publish_status']) ? substr( $post->attributes['publish_status'], 0, 150 ) : 'published',
             'language'    => 'fr_FR',
             'meta_title'  => null,
